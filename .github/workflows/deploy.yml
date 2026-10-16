@@ -63,3 +63,23 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
+      - name: Smoke test deployed Worker and frontend
+        env:
+          SITE: https://orbital-glass.averymiddlebrook2014.workers.dev
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            if curl --fail --silent --show-error --max-time 12 \
+              "$SITE/api/health" -o health.json \
+              && node -e "const r=require('./health.json'); if(r.status !== 'ok' || r.runtime !== 'cloudflare-workers') process.exit(1)" \
+              && curl --fail --silent --show-error --max-time 12 "$SITE/" -o homepage.html \
+              && grep -q 'Orbital Glass | Edge Control Room' homepage.html; then
+              echo "Production smoke test passed at $SITE"
+              cat health.json
+              exit 0
+            fi
+            echo "Production endpoint not ready (attempt $attempt/12)"
+            sleep 5
+          done
+          echo "::error::Production frontend or Worker health endpoint failed verification"
+          exit 1
